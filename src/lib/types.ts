@@ -22,7 +22,15 @@ export interface GameState {
   currentRound: number;
   phase: "setup" | "lobby" | "prompting" | "resolving" | "summary" | "scoring" | "finished";
   gameNarrative: string[];
+  awards: Award[];
+  paused: boolean;
   createdAt: number;
+}
+
+export interface Award {
+  roleId: string;
+  award: string;
+  reason: string;
 }
 
 export interface Role {

@@ -55,6 +55,8 @@ export async function createGame(req: CreateGameRequest): Promise<GameState> {
     currentRound: 0,
     phase: "lobby",
     gameNarrative: [],
+    awards: [],
+    paused: false,
     createdAt: Date.now(),
   };
 
@@ -83,11 +85,15 @@ export async function advanceToPrompting(gameId: string): Promise<GameState> {
   return game;
 }
 
-export async function resolveRound(gameId: string): Promise<GameState> {
+export async function resolveRound(
+  gameId: string,
+  onActionResolved?: (action: import("./types").Action, roleName: string) => void,
+): Promise<GameState> {
   const game = getGame(gameId);
   if (!game) throw new Error("Game not found");
 
   game.phase = "resolving";
+  setGame(game);
   const round = game.rounds[game.currentRound - 1];
 
   // Shuffle roles for random action order
@@ -97,20 +103,30 @@ export async function resolveRound(gameId: string): Promise<GameState> {
   for (const role of shuffledRoles) {
     if (!role.currentPrompt) continue;
 
-    const result = await generateAction(game, role, actionDescriptions);
+    let actionText: string;
+    try {
+      const result = await generateAction(game, role, actionDescriptions);
+      actionText = result.actionText;
+    } catch {
+      actionText = `${role.name} hesitated, unsure how to proceed in this moment...`;
+    }
 
-    round.actions.push({
+    const action = {
       roleId: role.id,
       promptUsed: role.currentPrompt,
-      actionText: result.actionText,
+      actionText,
       imageUrl: null,
-    });
+    };
 
-    actionDescriptions.push(`${role.name}: ${result.actionText}`);
+    round.actions.push(action);
+    actionDescriptions.push(`${role.name}: ${actionText}`);
 
     // Save prompt to history
     role.promptHistory.push(role.currentPrompt);
     role.currentPrompt = null;
+
+    setGame(game);
+    onActionResolved?.(action, role.name);
   }
 
   game.phase = "summary";
@@ -134,6 +150,7 @@ export async function scoreGame(gameId: string): Promise<GameState> {
   }
 
   game.gameNarrative.push(results.narrative);
+  game.awards = results.awards || [];
   game.phase = "finished";
   setGame(game);
   return game;
