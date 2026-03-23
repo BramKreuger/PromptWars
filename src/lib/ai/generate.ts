@@ -1,4 +1,4 @@
-import { getAnthropicClient } from "./client";
+import { getOpenAIClient } from "./client";
 import {
   scenarioGenerationPrompt,
   worldEventPrompt,
@@ -7,19 +7,21 @@ import {
 } from "./prompts";
 import type { GameState, Role } from "../types";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "gpt-4o";
 
 async function callAI(systemPrompt: string): Promise<string> {
-  const client = getAnthropicClient();
-  const response = await client.messages.create({
+  const client = getOpenAIClient();
+  const response = await client.chat.completions.create({
     model: MODEL,
     max_tokens: 2048,
-    messages: [{ role: "user", content: "Generate the requested output." }],
-    system: systemPrompt,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "Generate the requested output." },
+    ],
+    response_format: { type: "json_object" },
   });
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  return textBlock ? textBlock.text : "";
+  return response.choices[0]?.message?.content || "";
 }
 
 function parseJSON<T>(text: string): T {
