@@ -31,7 +31,7 @@ export function RoleCard({
             </span>
             {showCode && (
               <span className="text-xs text-[var(--color-retro-accent)]">
-                [{role.id}]
+                Player #{role.id}
               </span>
             )}
             {role.playerConnected && (

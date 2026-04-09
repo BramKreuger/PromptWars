@@ -34,7 +34,7 @@ export interface Award {
 }
 
 export interface Role {
-  id: string; // unique join code
+  id: string; // player number (2, 3, 4, ...)
   name: string;
   description: string;
   goal: string;
@@ -45,6 +45,7 @@ export interface Role {
   promptHistory: string[];
   score: number | null;
   scoreJustification: string | null;
+  goalProgress: string | null; // AI-generated one-line progress update per round
 }
 
 export interface Round {

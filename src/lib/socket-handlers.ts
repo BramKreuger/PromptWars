@@ -1,14 +1,14 @@
 import type { Server, Socket } from "socket.io";
 import type { GameState, Role } from "./types";
 import { SocketEvents } from "./socket-events";
-import { getGame, setGame } from "./store";
-import { advanceToPrompting, resolveRound, scoreGame } from "./engine";
+import { getGame, getActiveGame, setGame } from "./store";
+import { advanceToPrompting, resolveRound, scoreGame, setBroadcastCallback } from "./engine";
 import { startTimer, clearTimer, pauseTimer, resumeTimer } from "./timer";
 
 /** Strip private data from game state for a specific viewer. */
 function sanitizeForRole(game: GameState, viewerRoleId: string): GameState {
-  const isGM = viewerRoleId === "0";
-  const isSpectator = viewerRoleId === "spectator";
+  const isGM = viewerRoleId === "1";
+  const isGameView = viewerRoleId === "0";
 
   return {
     ...game,
@@ -23,6 +23,8 @@ function sanitizeForRole(game: GameState, viewerRoleId: string): GameState {
         goal: isGM || isOwn || game.phase === "finished" ? role.goal : "[Hidden]",
         secret:
           isGM || isOwn || game.phase === "finished" ? role.secret : null,
+        // Goal progress only visible to own player and GM
+        goalProgress: isGM || isOwn ? role.goalProgress : null,
         // Spectators and other players don't see score justification until finished
         scoreJustification:
           game.phase === "finished" || isGM
@@ -36,7 +38,7 @@ function sanitizeForRole(game: GameState, viewerRoleId: string): GameState {
       actions: round.actions.map((action) => ({
         ...action,
         promptUsed:
-          isGM || action.roleId === viewerRoleId || isSpectator
+          isGM || action.roleId === viewerRoleId
             ? action.promptUsed
             : "[Hidden]",
       })),
@@ -118,32 +120,35 @@ async function handleResolve(io: Server, gameId: string): Promise<void> {
 }
 
 export function registerSocketHandlers(io: Server): void {
+  // Allow engine to broadcast state updates (e.g. when images arrive)
+  setBroadcastCallback((gameId: string) => {
+    broadcastGameState(io, gameId);
+  });
+
   io.on("connection", (socket: Socket) => {
-    const { gameId, roleId } = socket.handshake.query as {
+    const { gameId: queryGameId, roleId } = socket.handshake.query as {
       gameId?: string;
       roleId?: string;
     };
 
-    if (!gameId) {
-      socket.disconnect();
-      return;
-    }
-
-    const game = getGame(gameId);
+    // Auto-find the active game if no gameId provided
+    const game = queryGameId ? getGame(queryGameId) : getActiveGame();
     if (!game) {
-      socket.emit(SocketEvents.ERROR, { message: "Game not found" });
+      socket.emit(SocketEvents.ERROR, { message: "No active game found" });
       socket.disconnect();
       return;
     }
+    const gameId = game.id;
 
-    // Store role info on socket
-    socket.data = { gameId, roleId: roleId || "spectator" };
+    // Store role info on socket (default to game view if no roleId)
+    socket.data = { gameId, roleId: roleId || "0" };
 
     // Join game room
     socket.join(`game:${gameId}`);
 
-    // Mark player as connected
-    if (roleId && roleId !== "0" && roleId !== "spectator") {
+    // Mark player as connected (players are roleId >= 2)
+    const roleNum = parseInt(roleId || "0", 10);
+    if (roleNum >= 2) {
       const role = game.roles.find((r) => r.id === roleId);
       if (role) {
         role.playerConnected = true;
@@ -152,7 +157,7 @@ export function registerSocketHandlers(io: Server): void {
     }
 
     // Send initial state
-    const viewerRole = roleId || "spectator";
+    const viewerRole = roleId || "0";
     socket.emit(
       SocketEvents.GAME_STATE_UPDATE,
       sanitizeForRole(game, viewerRole),
@@ -176,12 +181,12 @@ export function registerSocketHandlers(io: Server): void {
     });
 
     socket.on(SocketEvents.GM_ADVANCE, () => {
-      if (roleId !== "0") return; // Only GM
+      if (roleId !== "1") return; // Only GM
       handleAdvance(io, gameId);
     });
 
     socket.on(SocketEvents.GM_PAUSE, () => {
-      if (roleId !== "0") return;
+      if (roleId !== "1") return;
       const g = getGame(gameId);
       if (!g) return;
       g.paused = true;
@@ -191,7 +196,7 @@ export function registerSocketHandlers(io: Server): void {
     });
 
     socket.on(SocketEvents.GM_RESUME, () => {
-      if (roleId !== "0") return;
+      if (roleId !== "1") return;
       const g = getGame(gameId);
       if (!g) return;
       g.paused = false;
@@ -203,7 +208,7 @@ export function registerSocketHandlers(io: Server): void {
     socket.on(
       SocketEvents.GM_EDIT_WORLD_EVENT,
       ({ text }: { text: string }) => {
-        if (roleId !== "0") return;
+        if (roleId !== "1") return;
         const g = getGame(gameId);
         if (!g) return;
         const round = g.rounds[g.currentRound - 1];
@@ -217,7 +222,7 @@ export function registerSocketHandlers(io: Server): void {
     );
 
     socket.on(SocketEvents.GM_SKIP_WORLD_EVENT, () => {
-      if (roleId !== "0") return;
+      if (roleId !== "1") return;
       const g = getGame(gameId);
       if (!g) return;
       const round = g.rounds[g.currentRound - 1];
@@ -229,7 +234,7 @@ export function registerSocketHandlers(io: Server): void {
     });
 
     socket.on("disconnect", () => {
-      if (roleId && roleId !== "0" && roleId !== "spectator") {
+      if (roleNum >= 2) {
         const g = getGame(gameId);
         if (!g) return;
         const r = g.roles.find((role) => role.id === roleId);

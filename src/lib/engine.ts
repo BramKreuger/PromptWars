@@ -1,15 +1,23 @@
 import { nanoid } from "nanoid";
 import type { GameState, GameSettings, CreateGameRequest } from "./types";
 import { getGame, setGame } from "./store";
-import { generateScenario, generateWorldEvent, generateAction, generateScores } from "./ai/generate";
+import {
+  generateScenario,
+  generateWorldEvent,
+  generateAction,
+  generateRoundSummary,
+  generateScores,
+  startSceneImageGeneration,
+  startEventImageGeneration,
+} from "./ai/generate";
 
-function generateJoinCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 4; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
+// Role IDs: 0 = public game view, 1 = gamemaster, 2+ = players
+
+// Callback for broadcasting state updates (set by socket-handlers)
+let broadcastCallback: ((gameId: string) => void) | null = null;
+
+export function setBroadcastCallback(cb: (gameId: string) => void): void {
+  broadcastCallback = cb;
 }
 
 export async function createGame(req: CreateGameRequest): Promise<GameState> {
@@ -28,8 +36,8 @@ export async function createGame(req: CreateGameRequest): Promise<GameState> {
     soundEnabled: true,
   };
 
-  const roles = scenario.roles.map((r) => ({
-    id: generateJoinCode(),
+  const roles = scenario.roles.map((r, index) => ({
+    id: String(index + 2), // Players start at 2 (0=game view, 1=GM)
     name: r.name,
     description: r.description,
     goal: r.goal,
@@ -40,6 +48,7 @@ export async function createGame(req: CreateGameRequest): Promise<GameState> {
     promptHistory: [] as string[],
     score: null,
     scoreJustification: null,
+    goalProgress: null,
   }));
 
   const game: GameState = {
@@ -61,6 +70,12 @@ export async function createGame(req: CreateGameRequest): Promise<GameState> {
   };
 
   setGame(game);
+
+  // Fire-and-forget: generate scene image in background
+  startSceneImageGeneration(gameId, scenario.description, () => {
+    broadcastCallback?.(gameId);
+  });
+
   return game;
 }
 
@@ -71,17 +86,27 @@ export async function advanceToPrompting(gameId: string): Promise<GameState> {
   game.currentRound++;
   game.phase = "prompting";
 
-  // Generate world event for this round
+  // Generate world event text (fast, text only)
   const event = await generateWorldEvent(game);
   const round = {
     number: game.currentRound,
-    worldEvent: { text: event.text, imageUrl: null, injectedBy: "ai" as const },
+    worldEvent: { text: event.text, imageUrl: null as string | null, injectedBy: "ai" as const },
     actions: [],
     summary: null,
   };
   game.rounds.push(round);
 
   setGame(game);
+
+  // Fire-and-forget: generate event image in background
+  startEventImageGeneration(
+    gameId,
+    game.currentRound,
+    game.scenario.description,
+    event.text,
+    () => { broadcastCallback?.(gameId); },
+  );
+
   return game;
 }
 
@@ -101,19 +126,24 @@ export async function resolveRound(
   const actionDescriptions: string[] = [];
 
   for (const role of shuffledRoles) {
-    if (!role.currentPrompt) continue;
+    const hadPrompt = !!role.currentPrompt;
+    const prompt = role.currentPrompt || "(no instructions — idle)";
 
     let actionText: string;
-    try {
-      const result = await generateAction(game, role, actionDescriptions);
-      actionText = result.actionText;
-    } catch {
-      actionText = `${role.name} hesitated, unsure how to proceed in this moment...`;
+    if (!hadPrompt) {
+      actionText = `${role.name} stood around doing nothing, watching events unfold without intervening.`;
+    } else {
+      try {
+        const result = await generateAction(game, role, actionDescriptions);
+        actionText = result.actionText;
+      } catch {
+        actionText = `${role.name} hesitated, unsure how to proceed in this moment...`;
+      }
     }
 
     const action = {
       roleId: role.id,
-      promptUsed: role.currentPrompt,
+      promptUsed: prompt,
       actionText,
       imageUrl: null,
     };
@@ -122,11 +152,28 @@ export async function resolveRound(
     actionDescriptions.push(`${role.name}: ${actionText}`);
 
     // Save prompt to history
-    role.promptHistory.push(role.currentPrompt);
+    if (hadPrompt) {
+      role.promptHistory.push(role.currentPrompt!);
+    }
     role.currentPrompt = null;
 
     setGame(game);
     onActionResolved?.(action, role.name);
+  }
+
+  // Generate round summary with impact analysis and goal progress
+  try {
+    const summaryResult = await generateRoundSummary(game);
+    round.summary = summaryResult.summary;
+
+    for (const gp of summaryResult.goalProgress) {
+      const role = game.roles.find((r) => r.id === gp.roleId);
+      if (role) {
+        role.goalProgress = gp.progress;
+      }
+    }
+  } catch {
+    round.summary = null;
   }
 
   game.phase = "summary";

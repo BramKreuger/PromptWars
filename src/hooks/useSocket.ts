@@ -19,7 +19,7 @@ interface UseSocketReturn {
   lastAction: { action: Action; roleName: string } | null;
 }
 
-export function useSocket(gameId: string, roleId: string): UseSocketReturn {
+export function useSocket(gameId: string | null, roleId: string): UseSocketReturn {
   const socketRef = useRef<Socket | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -31,18 +31,21 @@ export function useSocket(gameId: string, roleId: string): UseSocketReturn {
   } | null>(null);
 
   useEffect(() => {
-    const socket = io({
-      query: { gameId, roleId },
-    });
+    const query: Record<string, string> = { roleId };
+    if (gameId) query.gameId = gameId;
+
+    const socket = io({ query });
 
     socketRef.current = socket;
 
-    socket.on("connect", () => setIsConnected(true));
+    socket.on("connect", () => {
+      setIsConnected(true);
+      setError(null);
+    });
     socket.on("disconnect", () => setIsConnected(false));
 
     socket.on(SocketEvents.GAME_STATE_UPDATE, (state: GameState) => {
       setGameState(state);
-      setError(null);
     });
 
     socket.on(

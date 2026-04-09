@@ -8,9 +8,10 @@ import { GamemasterDashboard } from "@/components/GamemasterDashboard";
 import { PlayerView } from "@/components/PlayerView";
 import { SpectatorView } from "@/components/SpectatorView";
 
-export default function GamePage() {
-  const { gameId, roleId } = useParams<{ gameId: string; roleId: string }>();
+export default function PlayPage() {
+  const { roleId } = useParams<{ roleId: string }>();
 
+  // Connect without a gameId — server auto-joins the active game
   const {
     gameState,
     isConnected,
@@ -23,7 +24,7 @@ export default function GamePage() {
     gmEditWorldEvent,
     gmSkipWorldEvent,
     lastAction,
-  } = useSocket(gameId, roleId);
+  } = useSocket(null, roleId);
 
   const soundEnabled = gameState?.settings.soundEnabled ?? false;
   const sounds = useSound(soundEnabled);
@@ -91,12 +92,12 @@ export default function GamePage() {
 
   return (
     <main className="mx-auto flex h-screen max-w-4xl flex-col gap-2 overflow-hidden p-3">
-      <header className="flex items-center justify-between">
+      <header className="flex shrink-0 items-center justify-between">
         <h1 className="text-sm text-[var(--color-retro-accent)]">
           PROMPTWARS
         </h1>
         <span className="text-xs text-[var(--color-retro-muted)]">
-          Game: {gameId}
+          Game: {gameState.id}
         </span>
       </header>
 

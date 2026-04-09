@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 
 export default function JoinGamePage() {
   const router = useRouter();
-  const [gameId, setGameId] = useState("");
-  const [code, setCode] = useState("");
+  const [playerNum, setPlayerNum] = useState("");
 
   function handleJoin() {
-    if (gameId.trim() && code.trim()) {
-      router.push(`/${gameId.trim()}/${code.trim()}`);
+    const num = playerNum.trim();
+    if (num) {
+      router.push(`/play/${num}`);
     }
   }
 
@@ -23,30 +23,20 @@ export default function JoinGamePage() {
       <div className="panel-retro flex w-full max-w-sm flex-col gap-4">
         <div>
           <label className="text-xs text-[var(--color-retro-muted)]">
-            Game ID
+            Your Player Number
           </label>
           <input
             className="mt-1 w-full bg-[var(--color-retro-bg)] p-2 text-sm text-[var(--color-retro-text)] outline-none"
-            placeholder="e.g. abc123"
-            value={gameId}
-            onChange={(e) => setGameId(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="text-xs text-[var(--color-retro-muted)]">
-            Your Code
-          </label>
-          <input
-            className="mt-1 w-full bg-[var(--color-retro-bg)] p-2 text-sm text-[var(--color-retro-text)] outline-none"
-            placeholder="e.g. A7X2"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
+            placeholder="e.g. 2"
+            value={playerNum}
+            onChange={(e) => setPlayerNum(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleJoin()}
           />
         </div>
         <button
           className="btn-retro"
           onClick={handleJoin}
-          disabled={!gameId.trim() || !code.trim()}
+          disabled={!playerNum.trim()}
         >
           Enter
         </button>

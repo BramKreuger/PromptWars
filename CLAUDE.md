@@ -47,7 +47,7 @@ src/
 - State is sanitized per viewer role before broadcast (goals/prompts hidden)
 - AI prompts are centralized in `lib/ai/prompts.ts`
 - All AI calls go through `lib/ai/generate.ts`
-- URL routing: `/{gameId}/0` = gamemaster, `/{gameId}/{code}` = player, `/{gameId}/spectator` = spectator
+- URL routing: `/{gameId}/0` = public game view (beamer), `/{gameId}/1` = gamemaster, `/{gameId}/2..N` = players
 - Socket events defined in `lib/socket-events.ts`, handlers in `lib/socket-handlers.ts`
 - Timer is server-authoritative with `setInterval`, auto-triggers round resolution
 

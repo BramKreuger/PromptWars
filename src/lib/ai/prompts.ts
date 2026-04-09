@@ -9,22 +9,24 @@ export function scenarioGenerationPrompt(
 The human gamemaster has described this scenario:
 "${userScenario}"
 
-Generate a game setup for ${playerCount} players. Respond with valid JSON matching this exact structure:
+Generate a game setup for ${playerCount} players. Keep ALL text short and punchy — this is shown on screen during a live game.
+
+Respond with valid JSON matching this exact structure:
 
 {
-  "description": "2-3 paragraph scenario description shown to all players. Set the scene vividly.",
-  "rules": ["Array of 5-8 world rules that define what is possible and what constraints exist"],
+  "description": "1-2 sentences setting the scene. Be vivid but brief.",
+  "rules": ["Array of 3-5 short world rules (one sentence each)"],
   "roles": [
     {
       "name": "Role Name",
-      "description": "1-2 sentence role description",
-      "goal": "The player's personal goal - specific and measurable",
-      "secret": "Optional secret information only this role knows, or null"
+      "description": "One sentence role description",
+      "goal": "One sentence goal - specific and measurable",
+      "secret": "One sentence secret, or null"
     }
   ]
 }
 
-Design goals that create interesting dynamics: some goals should overlap (creating alliances), others should conflict (creating tension). Each goal should be achievable but require strategic prompting. Make roles distinct and memorable.`;
+CRITICAL: Every goal MUST directly conflict with at least one other player's goal. There should be NO easy win-win path — like Risk, one player's success must come at another's expense. Create a web of competing interests where achieving your goal requires undermining someone else's. Make roles distinct and memorable.`;
 }
 
 export function worldEventPrompt(game: GameState): string {
@@ -43,15 +45,25 @@ SCENARIO: ${game.scenario.description}
 RULES: ${game.scenario.rules.join("; ")}
 ROUND: ${roundNum} of ${totalRounds} (narrative phase: ${phase})
 
-PREVIOUS EVENTS:
-${game.rounds.map((r) => `Round ${r.number}: ${r.summary || "No summary yet"}`).join("\n")}
+PREVIOUS ROUNDS:
+${game.rounds.map((r) => {
+  const actions = r.actions.map((a) => {
+    const role = game.roles.find((rl) => rl.id === a.roleId);
+    return `  ${role?.name}: ${a.actionText}`;
+  }).join("\n");
+  return `Round ${r.number}:
+  Event: ${r.worldEvent?.text || "None"}
+${actions}
+  Result: ${r.summary || "No summary"}`;
+}).join("\n")}
 
-Generate the world event for this round. The event should:
+Generate the world event for this round. Keep it to 1-2 sentences max. The event MUST be a direct consequence of or reaction to what happened in previous rounds. The event should:
+- Build on what players actually did — not feel random or disconnected
 - ${phase === "early" ? "Introduce a new element or complication" : ""}
 - ${phase === "middle" ? "Escalate tension, force difficult choices" : ""}
 - ${phase === "climax" ? "Force resolution, make fence-sitting impossible" : ""}
 
-Respond with JSON: { "text": "2-3 sentence world event description" }`;
+Respond with JSON: { "text": "1-2 sentence world event" }`;
 }
 
 export function agentActionPrompt(
@@ -77,14 +89,45 @@ ${actionsThisRound.length > 0 ? actionsThisRound.join("\n") : "None yet."}
 
 YOUR PLAYER'S INSTRUCTIONS: "${role.currentPrompt}"
 
-Based on your player's instructions, take an action. Write 1-3 short paragraphs in third person describing what ${role.name} does. The action must:
+Based on your player's instructions, take an action. Write 2-3 sentences in third person describing what ${role.name} does AND what immediate effect it has. Keep it punchy and dramatic. The action must:
 - Follow the player's instructions as closely as possible
 - Be consistent with the world rules
-- Be narrated in third person
+- Show a visible consequence or reaction from the world/other characters
 
 If the instructions are vague, do your best interpretation. If they ask for something impossible under the rules, have the character attempt it but face realistic consequences.
 
-Respond with JSON: { "actionText": "Your narration here" }`;
+Respond with JSON: { "actionText": "2-3 sentences max" }`;
+}
+
+export function roundSummaryPrompt(game: GameState): string {
+  const round = game.rounds[game.currentRound - 1];
+  const roleNames = game.roles.map((r) => `${r.name} (${r.id}): Goal = "${r.goal}"`).join("\n");
+
+  return `You are the AI Gamemaster for PromptWars. A round just finished. Summarize what happened and its CONSEQUENCES.
+
+SCENARIO: ${game.scenario.description}
+ROUND ${game.currentRound} of ${game.settings.rounds}
+
+WORLD EVENT: ${round?.worldEvent?.text || "None"}
+
+ACTIONS TAKEN:
+${round?.actions.map((a) => {
+  const role = game.roles.find((r) => r.id === a.roleId);
+  return `${role?.name}: ${a.actionText}`;
+}).join("\n")}
+
+ROLES AND GOALS:
+${roleNames}
+
+Generate a round summary and per-player goal progress. The summary should highlight how actions IMPACTED each other and changed the situation. Goal progress should be a short status visible only to that player.
+
+Respond with JSON:
+{
+  "summary": "2-3 sentences: what happened and what changed as a result. Focus on consequences and how players affected each other.",
+  "goalProgress": [
+    { "roleId": "2", "progress": "Short status, e.g. '1/3 tasks done — last one backfired' or 'Alliance forming but trust is shaky'" }
+  ]
+}`;
 }
 
 export function scoringPrompt(game: GameState): string {
@@ -106,16 +149,16 @@ Round ${r.number}:
 ROLES AND GOALS:
 ${game.roles.map((r) => `${r.name} (${r.id}): Goal = "${r.goal}"`).join("\n")}
 
-Score each player 0-10 based on how well they achieved their goal. Consider the full game arc, not just the final state. Reward consistent strategy, adaptability, and clever prompting.
+Score each player 0-10 based on how well they achieved their goal. Consider the full game arc. Reward consistent strategy, adaptability, and clever prompting.
 
 Respond with JSON:
 {
   "scores": [
-    { "roleId": "...", "score": 8, "justification": "2-3 sentence explanation" }
+    { "roleId": "...", "score": 8, "justification": "One sentence explanation" }
   ],
-  "narrative": "1 paragraph story of the entire game",
+  "narrative": "2-3 sentence story of the entire game",
   "awards": [
-    { "roleId": "...", "award": "Best Prompt", "reason": "..." }
+    { "roleId": "...", "award": "Best Prompt", "reason": "One sentence" }
   ]
 }`;
 }

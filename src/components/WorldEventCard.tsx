@@ -5,6 +5,7 @@ import type { WorldEvent } from "@/lib/types";
 interface WorldEventCardProps {
   event: WorldEvent;
   editable?: boolean;
+  hideImage?: boolean;
   onEdit?: (text: string) => void;
   onSkip?: () => void;
 }
@@ -12,6 +13,7 @@ interface WorldEventCardProps {
 export function WorldEventCard({
   event,
   editable = false,
+  hideImage = false,
   onEdit,
   onSkip,
 }: WorldEventCardProps) {
@@ -28,6 +30,14 @@ export function WorldEventCard({
           </span>
         )}
       </div>
+
+      {!hideImage && event.imageUrl && (
+        <img
+          src={event.imageUrl}
+          alt="World event scene"
+          className="mb-2 max-h-[35vh] w-full rounded object-cover"
+        />
+      )}
 
       {editable ? (
         <textarea

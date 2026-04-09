@@ -19,8 +19,8 @@ export default function CreateGamePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scenario, playerCount, rounds, promptTime }),
       });
-      const { gameId } = await res.json();
-      router.push(`/${gameId}/0`);
+      await res.json();
+      router.push("/play/1");
     } catch {
       setLoading(false);
     }
